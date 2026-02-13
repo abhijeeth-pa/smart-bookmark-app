@@ -7,6 +7,10 @@ const inter = Inter({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: 'Smart Bookmark App',
   description: 'A minimal, fast, real-time personal bookmark manager',
+  icons: {
+    icon: '/image.png',
+    apple: '/image.png',
+  },
 }
 
 export default function RootLayout({
