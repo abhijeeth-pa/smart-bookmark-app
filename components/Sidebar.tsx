@@ -11,10 +11,9 @@ type RecentBookmark = {
   accessed_at?: string
 }
 
-export default function Sidebar({ userId }: { userId: string }) {
+export default function Sidebar({ userId, isMobileOpen, setIsMobileOpen }: { userId: string; isMobileOpen: boolean; setIsMobileOpen: (open: boolean) => void }) {
   const pathname = usePathname()
   const [recentBookmarks, setRecentBookmarks] = useState<RecentBookmark[]>([])
-  const [isMobileOpen, setIsMobileOpen] = useState(false)
 
   useEffect(() => {
     // Load recent bookmarks from localStorage
@@ -27,9 +26,6 @@ export default function Sidebar({ userId }: { userId: string }) {
   const navItems = [
     { name: 'Dashboard', href: '/dashboard', icon: '📊' },
     { name: 'My Bookmarks', href: '/dashboard', icon: '🔖' },
-    { name: 'Categories', href: '/dashboard/categories', icon: '📁' },
-    { name: 'Reading List', href: '/dashboard/reading-list', icon: '📚' },
-    { name: 'Settings', href: '/dashboard/settings', icon: '⚙️' },
   ]
 
   const formatTimeAgo = (dateString?: string) => {
@@ -46,16 +42,6 @@ export default function Sidebar({ userId }: { userId: string }) {
 
   return (
     <>
-      {/* Mobile Menu Button */}
-      <button
-        onClick={() => setIsMobileOpen(!isMobileOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-white shadow-lg"
-      >
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-        </svg>
-      </button>
-
       {/* Overlay */}
       {isMobileOpen && (
         <div

@@ -38,6 +38,7 @@ export default function EnhancedDashboard({
   const [editingBookmark, setEditingBookmark] = useState<Bookmark | null>(null)
   const [toast, setToast] = useState({ message: '', type: 'success' as const, isVisible: false })
   const [isLoading, setIsLoading] = useState(false)
+  const [isMobileOpen, setIsMobileOpen] = useState(false)
   const supabase = createClient()
 
   // Set up real-time subscription
@@ -136,18 +137,42 @@ export default function EnhancedDashboard({
   }
 
   const handleAddBookmark = async (title: string, url: string) => {
-    setIsLoading(true)
-    const { error } = await supabase.from('bookmarks').insert({
+    // Create a temporary bookmark object for optimistic update
+    const tempBookmark: Bookmark = {
+      id: `temp_${Date.now()}`,
       user_id: userId,
       title,
       url,
-    })
+      created_at: new Date().toISOString(),
+    }
 
-    setIsLoading(false)
+    // Immediately update the UI (optimistic update)
+    setBookmarks((prev) => [tempBookmark, ...prev])
+    setIsModalOpen(false)
+
+    // Perform the database operation
+    const { data, error } = await supabase
+      .from('bookmarks')
+      .insert({
+        user_id: userId,
+        title,
+        url,
+      })
+      .select()
+      .single()
+
     if (error) {
+      // Rollback on error
+      setBookmarks((prev) => prev.filter((b) => b.id !== tempBookmark.id))
       showToast('Failed to add bookmark', 'error')
       console.error('Error adding bookmark:', error)
     } else {
+      // Replace temp bookmark with real one
+      if (data) {
+        setBookmarks((prev) =>
+          prev.map((b) => (b.id === tempBookmark.id ? data : b))
+        )
+      }
       showToast('Bookmark added successfully!', 'success')
     }
   }
@@ -155,26 +180,50 @@ export default function EnhancedDashboard({
   const handleEditBookmark = async (title: string, url: string) => {
     if (!editingBookmark) return
 
-    setIsLoading(true)
+    const originalBookmark = editingBookmark
+
+    // Immediately update the UI (optimistic update)
+    setBookmarks((prev) =>
+      prev.map((b) =>
+        b.id === editingBookmark.id ? { ...b, title, url } : b
+      )
+    )
+    setEditingBookmark(null)
+    setIsModalOpen(false)
+
+    // Perform the database operation
     const { error } = await supabase
       .from('bookmarks')
       .update({ title, url })
       .eq('id', editingBookmark.id)
 
-    setIsLoading(false)
     if (error) {
+      // Rollback on error
+      setBookmarks((prev) =>
+        prev.map((b) => (b.id === originalBookmark.id ? originalBookmark : b))
+      )
       showToast('Failed to update bookmark', 'error')
       console.error('Error updating bookmark:', error)
     } else {
       showToast('Bookmark updated successfully!', 'success')
-      setEditingBookmark(null)
     }
   }
 
   const handleDeleteBookmark = async (id: string) => {
+    // Store the bookmark in case we need to rollback
+    const deletedBookmark = bookmarks.find((b) => b.id === id)
+
+    // Immediately update the UI (optimistic update)
+    setBookmarks((prev) => prev.filter((b) => b.id !== id))
+
+    // Perform the database operation
     const { error } = await supabase.from('bookmarks').delete().eq('id', id)
 
     if (error) {
+      // Rollback on error
+      if (deletedBookmark) {
+        setBookmarks((prev) => [deletedBookmark, ...prev])
+      }
       showToast('Failed to delete bookmark', 'error')
       console.error('Error deleting bookmark:', error)
     } else {
@@ -224,7 +273,7 @@ export default function EnhancedDashboard({
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       {/* Sidebar */}
-      <Sidebar userId={userId} />
+      <Sidebar userId={userId} isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen} />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -235,6 +284,7 @@ export default function EnhancedDashboard({
           sortOption={sortOption}
           setSortOption={setSortOption}
           onAddBookmark={handleOpenAddModal}
+          onToggleSidebar={() => setIsMobileOpen(!isMobileOpen)}
         />
 
         {/* Main Content */}
