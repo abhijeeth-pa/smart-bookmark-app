@@ -2,6 +2,23 @@
 
 A minimal, fast, real-time personal bookmark manager built with Next.js, Supabase, and Tailwind CSS.
 
+## ✨ New Enhanced Features
+
+**Version 2.0** now includes a complete dashboard redesign with:
+
+- 🎨 **Modern sidebar navigation** with collapsible mobile menu
+- 🔍 **Real-time search** through bookmarks (title & URL)
+- 📊 **4 sorting options** (Recent, Oldest, Title A-Z, Last Accessed)
+- 🖼️ **Beautiful card UI** with random placeholder thumbnails
+- ⚡ **Recent activity tracking** (last 5 accessed bookmarks)
+- ✏️ **Edit bookmarks** with modal interface
+- 🎯 **Toast notifications** for all actions
+- 💀 **Loading skeletons** for better UX
+- 📱 **Fully responsive** sidebar drawer on mobile
+- 🎨 **Empty state** with helpful onboarding
+
+**See [FEATURES.md](FEATURES.md) for complete feature documentation.**
+
 ## Features
 
 - 🔐 **Google OAuth Authentication** - Secure login with Google
