@@ -36,7 +36,7 @@ export default function EnhancedDashboard({
   const [sortOption, setSortOption] = useState('recent')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingBookmark, setEditingBookmark] = useState<Bookmark | null>(null)
-  const [toast, setToast] = useState({ message: '', type: 'success' as const, isVisible: false })
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info'; isVisible: boolean }>({ message: '', type: 'success', isVisible: false })
   const [isLoading, setIsLoading] = useState(false)
   const [isMobileOpen, setIsMobileOpen] = useState(false)
   const supabase = createClient()
