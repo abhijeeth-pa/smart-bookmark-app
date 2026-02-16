@@ -21,6 +21,36 @@ export default function BookmarkList({
   const [bookmarks, setBookmarks] = useState<Bookmark[]>(initialBookmarks)
   const supabase = createClient()
 
+  // Listen to BroadcastChannel for fast cross-tab updates
+  useEffect(() => {
+    let bc: BroadcastChannel | null = null
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      bc = new BroadcastChannel('bookmarks')
+      bc.onmessage = (ev) => {
+        try {
+          const msg = ev.data
+          if (!msg || msg.userId !== userId) return
+
+          if (msg.type === 'added') {
+            setBookmarks((current) => [msg.data as Bookmark, ...current])
+          }
+
+          if (msg.type === 'deleted') {
+            setBookmarks((current) => current.filter((b) => b.id !== msg.id))
+          }
+
+          if (msg.type === 'updated') {
+            setBookmarks((current) => current.map((b) => (b.id === msg.data.id ? (msg.data as Bookmark) : b)))
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
+
+    return () => bc?.close()
+  }, [userId])
+
   useEffect(() => {
     // Set up real-time subscription
     const channel = supabase
@@ -64,6 +94,18 @@ export default function BookmarkList({
     if (error) {
       console.error('Error deleting bookmark:', error)
       alert('Failed to delete bookmark')
+    }
+    else {
+      // Broadcast deletion to other tabs for immediate UI update
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const bc = new BroadcastChannel('bookmarks')
+        try {
+          bc.postMessage({ type: 'deleted', userId, id })
+        } catch (e) {
+          // ignore
+        }
+        bc.close()
+      }
     }
   }
 
