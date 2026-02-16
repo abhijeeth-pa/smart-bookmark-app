@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import Sidebar from '@/components/Sidebar'
 import TopNavbar from '@/components/TopNavbar'
@@ -41,6 +41,9 @@ export default function EnhancedDashboard({
   const [isMobileOpen, setIsMobileOpen] = useState(false)
   const supabase = createClient()
 
+  // Track pending operations to prevent duplicates from real-time subscriptions
+  const pendingOperationsRef = useRef<Set<string>>(new Set())
+
   // BroadcastChannel for fast cross-tab updates (falls back gracefully)
   useEffect(() => {
     let bc: BroadcastChannel | null = null
@@ -52,7 +55,12 @@ export default function EnhancedDashboard({
           if (!msg || msg.userId !== userId) return
 
           if (msg.type === 'added') {
-            setBookmarks((current) => [msg.data as Bookmark, ...current])
+            setBookmarks((current) => {
+              const newItem = msg.data as Bookmark
+              // Avoid duplicates
+              if (current.some((b) => b.id === newItem.id)) return current
+              return [newItem, ...current]
+            })
           }
 
           if (msg.type === 'deleted') {
@@ -74,6 +82,7 @@ export default function EnhancedDashboard({
       bc?.close()
     }
   }, [userId])
+
   // Set up real-time subscription
   useEffect(() => {
     const channel = supabase
@@ -87,9 +96,16 @@ export default function EnhancedDashboard({
           filter: `user_id=eq.${userId}`,
         },
         (payload) => {
+          const newItem = payload.new as Bookmark
+          
+          // Skip if this was our own pending operation
+          if (pendingOperationsRef.current.has(`insert-${newItem.id}`)) {
+            pendingOperationsRef.current.delete(`insert-${newItem.id}`)
+            return
+          }
+
           setBookmarks((current) => {
-            const newItem = payload.new as Bookmark
-            // avoid duplicates if the item already exists (e.g., optimistic UI)
+            // Avoid duplicates if the item already exists
             if (current.some((b) => b.id === newItem.id)) return current
             return [newItem, ...current]
           })
@@ -104,8 +120,16 @@ export default function EnhancedDashboard({
           filter: `user_id=eq.${userId}`,
         },
         (payload) => {
+          const deletedId = payload.old.id
+          
+          // Skip if this was our own pending operation
+          if (pendingOperationsRef.current.has(`delete-${deletedId}`)) {
+            pendingOperationsRef.current.delete(`delete-${deletedId}`)
+            return
+          }
+
           setBookmarks((current) =>
-            current.filter((bookmark) => bookmark.id !== payload.old.id)
+            current.filter((bookmark) => bookmark.id !== deletedId)
           )
         }
       )
@@ -118,9 +142,17 @@ export default function EnhancedDashboard({
           filter: `user_id=eq.${userId}`,
         },
         (payload) => {
+          const updatedItem = payload.new as Bookmark
+          
+          // Skip if this was our own pending operation
+          if (pendingOperationsRef.current.has(`update-${updatedItem.id}`)) {
+            pendingOperationsRef.current.delete(`update-${updatedItem.id}`)
+            return
+          }
+
           setBookmarks((current) =>
             current.map((bookmark) =>
-              bookmark.id === payload.new.id ? (payload.new as Bookmark) : bookmark
+              bookmark.id === updatedItem.id ? updatedItem : bookmark
             )
           )
         }
@@ -207,11 +239,20 @@ export default function EnhancedDashboard({
     } else {
       // Replace temp bookmark with real one
       if (data) {
+        // Mark this operation as pending to skip real-time duplicate
+        pendingOperationsRef.current.add(`insert-${data.id}`)
+        
         setBookmarks((prev) => {
           // Remove temp and any existing item with the same real id, then add real item at front
           const filtered = prev.filter((b) => b.id !== tempBookmark.id && b.id !== data.id)
           return [data, ...filtered]
         })
+
+        // Clean up pending marker after a delay
+        setTimeout(() => {
+          pendingOperationsRef.current.delete(`insert-${data.id}`)
+        }, 1000)
+
         // Broadcast to other tabs immediately that a bookmark was added
         if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
           const bc = new BroadcastChannel('bookmarks')
@@ -241,6 +282,9 @@ export default function EnhancedDashboard({
     setEditingBookmark(null)
     setIsModalOpen(false)
 
+    // Mark this operation as pending to skip real-time duplicate
+    pendingOperationsRef.current.add(`update-${editingBookmark.id}`)
+
     // Perform the database operation
     const { error } = await supabase
       .from('bookmarks')
@@ -252,9 +296,15 @@ export default function EnhancedDashboard({
       setBookmarks((prev) =>
         prev.map((b) => (b.id === originalBookmark.id ? originalBookmark : b))
       )
+      pendingOperationsRef.current.delete(`update-${editingBookmark.id}`)
       showToast('Failed to update bookmark', 'error')
       console.error('Error updating bookmark:', error)
     } else {
+      // Clean up pending marker after a delay
+      setTimeout(() => {
+        pendingOperationsRef.current.delete(`update-${editingBookmark.id}`)
+      }, 1000)
+
       // Broadcast update to other tabs
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
         const bc = new BroadcastChannel('bookmarks')
@@ -276,6 +326,9 @@ export default function EnhancedDashboard({
     // Immediately update the UI (optimistic update)
     setBookmarks((prev) => prev.filter((b) => b.id !== id))
 
+    // Mark this operation as pending to skip real-time duplicate
+    pendingOperationsRef.current.add(`delete-${id}`)
+
     // Perform the database operation
     const { error } = await supabase.from('bookmarks').delete().eq('id', id)
 
@@ -284,9 +337,15 @@ export default function EnhancedDashboard({
       if (deletedBookmark) {
         setBookmarks((prev) => [deletedBookmark, ...prev])
       }
+      pendingOperationsRef.current.delete(`delete-${id}`)
       showToast('Failed to delete bookmark', 'error')
       console.error('Error deleting bookmark:', error)
     } else {
+      // Clean up pending marker after a delay
+      setTimeout(() => {
+        pendingOperationsRef.current.delete(`delete-${id}`)
+      }, 1000)
+
       // Broadcast deletion to other tabs
       if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
         const bc = new BroadcastChannel('bookmarks')
