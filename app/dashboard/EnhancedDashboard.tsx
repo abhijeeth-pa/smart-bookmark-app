@@ -41,6 +41,39 @@ export default function EnhancedDashboard({
   const [isMobileOpen, setIsMobileOpen] = useState(false)
   const supabase = createClient()
 
+  // BroadcastChannel for fast cross-tab updates (falls back gracefully)
+  useEffect(() => {
+    let bc: BroadcastChannel | null = null
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      bc = new BroadcastChannel('bookmarks')
+      bc.onmessage = (ev) => {
+        try {
+          const msg = ev.data
+          if (!msg || msg.userId !== userId) return
+
+          if (msg.type === 'added') {
+            setBookmarks((current) => [msg.data as Bookmark, ...current])
+          }
+
+          if (msg.type === 'deleted') {
+            setBookmarks((current) => current.filter((b) => b.id !== msg.id))
+          }
+
+          if (msg.type === 'updated') {
+            setBookmarks((current) =>
+              current.map((b) => (b.id === msg.data.id ? (msg.data as Bookmark) : b))
+            )
+          }
+        } catch (e) {
+          // ignore malformed messages
+        }
+      }
+    }
+
+    return () => {
+      bc?.close()
+    }
+  }, [userId])
   // Set up real-time subscription
   useEffect(() => {
     const channel = supabase
@@ -172,6 +205,16 @@ export default function EnhancedDashboard({
         setBookmarks((prev) =>
           prev.map((b) => (b.id === tempBookmark.id ? data : b))
         )
+        // Broadcast to other tabs immediately that a bookmark was added
+        if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+          const bc = new BroadcastChannel('bookmarks')
+          try {
+            bc.postMessage({ type: 'added', userId, data })
+          } catch (e) {
+            // ignore
+          }
+          bc.close()
+        }
       }
       showToast('Bookmark added successfully!', 'success')
     }
@@ -205,6 +248,16 @@ export default function EnhancedDashboard({
       showToast('Failed to update bookmark', 'error')
       console.error('Error updating bookmark:', error)
     } else {
+      // Broadcast update to other tabs
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const bc = new BroadcastChannel('bookmarks')
+        try {
+          bc.postMessage({ type: 'updated', userId, data: { id: editingBookmark.id, title, url } })
+        } catch (e) {
+          // ignore
+        }
+        bc.close()
+      }
       showToast('Bookmark updated successfully!', 'success')
     }
   }
@@ -227,6 +280,16 @@ export default function EnhancedDashboard({
       showToast('Failed to delete bookmark', 'error')
       console.error('Error deleting bookmark:', error)
     } else {
+      // Broadcast deletion to other tabs
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const bc = new BroadcastChannel('bookmarks')
+        try {
+          bc.postMessage({ type: 'deleted', userId, id })
+        } catch (e) {
+          // ignore
+        }
+        bc.close()
+      }
       showToast('Bookmark deleted', 'info')
     }
   }
