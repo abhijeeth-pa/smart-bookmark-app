@@ -87,7 +87,12 @@ export default function EnhancedDashboard({
           filter: `user_id=eq.${userId}`,
         },
         (payload) => {
-          setBookmarks((current) => [payload.new as Bookmark, ...current])
+          setBookmarks((current) => {
+            const newItem = payload.new as Bookmark
+            // avoid duplicates if the item already exists (e.g., optimistic UI)
+            if (current.some((b) => b.id === newItem.id)) return current
+            return [newItem, ...current]
+          })
         }
       )
       .on(
@@ -202,9 +207,11 @@ export default function EnhancedDashboard({
     } else {
       // Replace temp bookmark with real one
       if (data) {
-        setBookmarks((prev) =>
-          prev.map((b) => (b.id === tempBookmark.id ? data : b))
-        )
+        setBookmarks((prev) => {
+          // Remove temp and any existing item with the same real id, then add real item at front
+          const filtered = prev.filter((b) => b.id !== tempBookmark.id && b.id !== data.id)
+          return [data, ...filtered]
+        })
         // Broadcast to other tabs immediately that a bookmark was added
         if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
           const bc = new BroadcastChannel('bookmarks')
